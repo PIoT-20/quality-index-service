@@ -31,7 +31,7 @@ class QIS:
                 "end_time": end_time,
                 "quality_indexes": qis
             }
-            return json.dumps(ret)
+            return ret
         
         except Exception as e:
             raise cherrypy.HTTPError(500, str(e))
@@ -80,6 +80,4 @@ class QIS:
             return {device_type: qi}
         except Exception as e:
             print(f"Error calculating quality index for device {device_id}: {e}")
-            return {}
-
-        #return {device_type: qi}
+            raise e
