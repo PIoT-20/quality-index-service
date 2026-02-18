@@ -1,18 +1,34 @@
 import cherrypy
 import requests as req
 import json
+import os
 
 class QIS:
     exposed = True
 
     def __init__(self) -> None:
-        self.register()
-        self.catalog = "http://catalog:8080"
+        self.catalog = os.getenv("CATALOG_ADDRESS")
+        if not self.catalog:
+            raise ValueError("CATALOG_ADDRESS environment variable not set")
+        
+        self.address = os.getenv("QIS_ADDRESS")
+        if not self.address:
+            raise ValueError("QIS_ADDRESS environment variable not set")
+        
+        try:
+            self.register()
+        except Exception as e:
+            print("Error while registering: ", e)
 
     
     def register(self) -> None:
-        """Registers the agent within the IoT platform."""
-        pass
+        data = {
+            "service_type": "QIS",
+            "address": self.address,
+            "description": "Quality Index Service"
+        }
+
+        req.post(f"http://{self.catalog}/service", json=data)
 
     @cherrypy.expose
     @cherrypy.tools.json_out() # type: ignore
@@ -42,42 +58,34 @@ class QIS:
         quality_indexes = {}
 
         for device in devices:
-            device_id = device.get("id")
-            qi = self.calculate_quality_index(device_id, start_time, end_time)
+            qi = self.calculate_quality_index(device, start_time, end_time)
             quality_indexes.update(qi)
 
         return quality_indexes
 
     def get_client_devices(self, client_id):
-        return [{"id": 1}]
-        devices = req.get(f"http://{self.catalog}/devices?client_id={client_id}").json().get("devices")
+        devices = req.get(f"http://{self.catalog}/device?client_id={client_id}").json().get("devices")
         return devices
     
     def get_device_readings(self, device_id, start_time, end_time):
-        history_tracking = "127.0.0.1:8082"
-        #history_tracking = req.get(f"http://{self.catalog}/services?service=history-tracking").json().get("agent")
+        history_tracking = req.get(f"http://{self.catalog}/service?service=history-tracking").json().get("agent")
         data = req.get(f"http://{history_tracking}/readings?device_id={device_id}&start_time={start_time}&end_time={end_time}").json()
         return data
     
-    def get_agent_for_device(self, device_id):
-        #device_type = req.get(f"http://{self.catalog}/devices?device_id={device_id}").json().get("type")
-        #agent = req.get(f"http://{self.catalog}/services?service=agent_{device_type}").json().get("agent")
-        
-        device_type = "EU-OSHA-noise"
-        agent = "127.0.0.1:8083"
-        
-        return device_type, agent
+    def get_agent_for_device_type(self, device_type):
+        agent = req.get(f"http://{self.catalog}/service?service=agent_{device_type}").json().get("agent")        
+        return agent
     
     def get_qi(self, agent, readings):
         qi = req.post(f"http://{agent}/process_readings", json=readings).json().get("quality_index")
         return qi
 
-    def calculate_quality_index(self, device_id, start_time, end_time):
+    def calculate_quality_index(self, device, start_time, end_time):
         try:
-            readings = self.get_device_readings(device_id, start_time, end_time)
-            device_type, agent = self.get_agent_for_device(device_id)
+            readings = self.get_device_readings(device.get("id"), start_time, end_time)
+            agent = self.get_agent_for_device_type(device.get("type"))
             qi = self.get_qi(agent, readings)
-            return {device_type: qi}
+            return {device.get("type"): qi}
         except Exception as e:
-            print(f"Error calculating quality index for device {device_id}: {e}")
+            print(f'Error calculating quality index for device {device.get("id")}: {e}')
             raise e

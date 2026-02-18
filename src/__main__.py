@@ -27,7 +27,7 @@ if __name__ == "__main__":
     }
     service = QIS()
     
-    cherrypy.config.update({'server.socket_host': '0.0.0.0', "server.socket_port": 8085})
+    cherrypy.config.update({'server.socket_host': '0.0.0.0', "server.socket_port": 8080})
     cherrypy.tree.mount(service, '/', conf)
     cherrypy.engine.start()
     cherrypy.engine.block()
