@@ -12,6 +12,14 @@ def json_error_page(status, message, traceback, version):
     }).encode('utf-8')
 
 if __name__ == "__main__":
+
+    catalog_address = os.getenv("CATALOG_ADDRESS")
+    qis_address = os.getenv("QIS_ADDRESS")
+
+    service = QIS(catalog_address=catalog_address, qis_address=qis_address)
+
+    service.Start()
+
     conf={
         '/':{
             'request.dispatch':cherrypy.dispatch.MethodDispatcher(),
@@ -25,7 +33,6 @@ if __name__ == "__main__":
             'error_page.default': json_error_page
         },
     }
-    service = QIS()
     
     cherrypy.config.update({'server.socket_host': '0.0.0.0', "server.socket_port": 8080})
     cherrypy.tree.mount(service, '/', conf)

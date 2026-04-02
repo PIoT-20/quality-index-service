@@ -6,21 +6,33 @@ import os
 class QIS:
     exposed = True
 
-    def __init__(self) -> None:
-        self.catalog = os.getenv("CATALOG_ADDRESS")
+    def __init__(self, catalog_address, qis_address) -> None:
+        self.catalog = catalog_address
         if not self.catalog:
-            raise ValueError("CATALOG_ADDRESS environment variable not set")
+            raise ValueError("CATALOG_ADDRESS must be provided")
         
-        self.address = os.getenv("QIS_ADDRESS")
+        self.address = qis_address
         if not self.address:
-            raise ValueError("QIS_ADDRESS environment variable not set")
+            raise ValueError("QIS_ADDRESS must be provided")
         
+        self.load_cfg()
+        
+    def load_cfg(self):
         try:
-            self.register()
-        except Exception as e:
-            print("Error while registering: ", e)
+            self.cfg = json.load(open("cfg.json", "r"))
+        except FileNotFoundError:
+            self.cfg = {}
+
+    def save_cfg(self):
+        json.dump(self.cfg, open("cfg.json", "w"))
 
     
+    def Start(self):
+        if not self.cfg.get("service_id"):
+            self.register()
+        else:
+            self.update_registration()
+
     def register(self) -> None:
         data = {
             "service_type": "QIS",
@@ -28,7 +40,28 @@ class QIS:
             "description": "Quality Index Service"
         }
 
-        req.post(f"http://{self.catalog}/service", json=data)
+        response = req.post(f"{self.catalog}/service", json=data)
+        if response.status_code == 201:
+            self.cfg["service_id"] = response.json().get("_id").get("$oid")
+            self.save_cfg()
+        else:
+            raise Exception(f"Failed to register service: {response.text}")
+
+
+    def update_registration(self) -> None:
+        data = {
+            "id": {"$oid": self.cfg["service_id"]},
+            "service_type": "QIS",
+            "address": self.address,
+            "description": "Quality Index Service"
+        }
+
+        response = req.put(f"{self.catalog}/service/", json=data)
+        if response.status_code == 201:
+            print("Registration updated successfully. Id: ", self.cfg["service_id"])
+        else:
+            raise Exception(f"Failed to update registration: {response.text}")
+        
 
     @cherrypy.expose
     @cherrypy.tools.json_out() # type: ignore
@@ -64,20 +97,20 @@ class QIS:
         return quality_indexes
 
     def get_client_devices(self, client_id):
-        devices = req.get(f"http://{self.catalog}/device?client_id={client_id}").json().get("devices")
+        devices = req.get(f"{self.catalog}/device?client_id={client_id}").json().get("devices")
         return devices
     
     def get_device_readings(self, device_id, start_time, end_time):
-        history_tracking = req.get(f"http://{self.catalog}/service?service=history-tracking").json().get("agent")
-        data = req.get(f"http://{history_tracking}/readings?device_id={device_id}&start_time={start_time}&end_time={end_time}").json()
+        history_tracking = req.get(f"{self.catalog}/service?service=history-tracking").json().get("agent")
+        data = req.get(f"{history_tracking}/readings?device_id={device_id}&start_time={start_time}&end_time={end_time}").json()
         return data
     
     def get_agent_for_device_type(self, device_type):
-        agent = req.get(f"http://{self.catalog}/service?service=agent_{device_type}").json().get("agent")        
+        agent = req.get(f"{self.catalog}/service?service=agent_{device_type}").json().get("agent")        
         return agent
     
     def get_qi(self, agent, readings):
-        qi = req.post(f"http://{agent}/process_readings", json=readings).json().get("quality_index")
+        qi = req.post(f"{agent}/process_readings", json=readings).json().get("quality_index")
         return qi
 
     def calculate_quality_index(self, device, start_time, end_time):
