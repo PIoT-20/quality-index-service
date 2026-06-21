@@ -28,10 +28,7 @@ class QIS:
 
     
     def Start(self):
-        if not self.cfg.get("service_id"):
-            self.register()
-        else:
-            self.update_registration()
+        self.register()
 
     def register(self) -> None:
         data = {
@@ -41,27 +38,11 @@ class QIS:
         }
 
         response = req.post(f"{self.catalog}/service", json=data)
-        if response.status_code == 201:
+        if response.status_code == 201 or response.status_code == 200:
             self.cfg["service_id"] = response.json().get("_id").get("$oid")
             self.save_cfg()
         else:
             raise Exception(f"Failed to register service: {response.text}")
-
-
-    def update_registration(self) -> None:
-        data = {
-            "id": {"$oid": self.cfg["service_id"]},
-            "service_type": "QIS",
-            "address": self.address,
-            "description": "Quality Index Service"
-        }
-
-        response = req.put(f"{self.catalog}/service/", json=data)
-        if response.status_code == 201:
-            print("Registration updated successfully. Id: ", self.cfg["service_id"])
-        else:
-            raise Exception(f"Failed to update registration: {response.text}")
-        
 
     @cherrypy.expose
     @cherrypy.tools.json_out() # type: ignore
@@ -74,14 +55,19 @@ class QIS:
             raise cherrypy.HTTPError(400, "Missing user_id, start_time or end_time")
         try:
             qis = self.calculate_quality_indexes(user_id, start_time, end_time)
+            if len(qis) == 0:
+                raise cherrypy.HTTPError(404, f"No quality indexes found for user {user_id} between {start_time} and {end_time}")
+            
             ret = {
                 "user_id": user_id,
                 "start_time": start_time,
                 "end_time": end_time,
                 "quality_indexes": qis
             }
+            print(f"Calculated quality indexes for user {user_id} between {start_time} and {end_time}: {ret}")
             return ret
-        
+        except cherrypy.HTTPError:
+            raise
         except Exception as e:
             print(f"Error calculating quality indexes for user {user_id}: {e}")
             raise cherrypy.HTTPError(500, "Internal Server Error: ")
@@ -89,6 +75,7 @@ class QIS:
 
     def calculate_quality_indexes(self, user_id, start_time, end_time):
         devices = self.get_client_devices(user_id)
+        self.services = self.get_services()
         quality_indexes = []
 
         for device in devices:
@@ -105,6 +92,13 @@ class QIS:
                 
         return quality_indexes
 
+    def get_services(self):
+        response = req.get(f"{self.catalog}/service")
+        if response.status_code != 200:
+            raise Exception(f"Failed to get services from catalog: {response.text}")
+        services = response.json()
+        return services
+
     def get_client_devices(self, user_id):
         response = req.get(f"{self.catalog}/device?user_id={user_id}")
         if response.status_code != 200:
@@ -113,12 +107,10 @@ class QIS:
         return devices
     
     def get_history_tracking_address(self):
-        response = req.get(f"{self.catalog}/service?service_type=history-tracking")
-        if response.status_code == 404:
+        ht = list(filter(lambda s: s.get("service_type") == "history-tracking", self.services))
+        if len(ht) == 0:
             raise Exception("No history tracking service found in catalog")
-        if response.status_code != 200:
-            raise Exception(f"Failed to get history tracking service: {response.text}")
-        return response.json().get("address")
+        return ht[0].get("address")
 
     def get_device_readings(self, device_id, start_time, end_time):
         history_tracking = self.get_history_tracking_address()
@@ -131,15 +123,15 @@ class QIS:
         return response.json().get("readings", [])
     
     def get_agent_for_device_type(self, device_type):
-        response = req.get(f"{self.catalog}/service?service_type=agent_{device_type}")
-        if response.status_code == 404:
+        agents = list(filter(lambda s: s.get("service_type") == f"agent_{device_type}", self.services))
+        if len(agents) == 0:
             raise Exception(f"No agent found for device type {device_type}")
-        elif response.status_code != 200:
-            raise Exception(f"Failed to get agent for device type {device_type}: {response.text}") 
-        return response.json().get("address")   
+        return agents[0].get("address") 
     
     def get_qi(self, agent, readings):
         response = req.post(f"{agent}/process_readings", json={"readings": readings})
+        if response.status_code != 200:
+            raise Exception(f"Failed to get quality index from agent {agent}: {response.text}")
         qi = response.json().get("quality_index")
         return qi
 

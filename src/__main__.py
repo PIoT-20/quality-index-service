@@ -11,6 +11,13 @@ def json_error_page(status, message, traceback, version):
         "error": message
     }).encode('utf-8')
 
+def cors():
+    cherrypy.response.headers["Access-Control-Allow-Origin"] = "*"
+    cherrypy.response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    cherrypy.response.headers["Access-Control-Allow-Headers"] = "*"
+
+cherrypy.tools.cors = cherrypy.Tool('before_handler', cors)
+
 if __name__ == "__main__":
 
     catalog_address = os.getenv("CATALOG_ADDRESS")
@@ -27,6 +34,7 @@ if __name__ == "__main__":
             'tools.sessions.on': True,
             'tools.json_out.on': True,
             'tools.json_in.on': True,
+            'tools.cors.on': True,
             'request.show_tracebacks': False,
             'request.show_mismatched_params': False,
             'engine.autoreload.on': True,
