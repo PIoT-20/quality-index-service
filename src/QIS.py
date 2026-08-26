@@ -113,7 +113,7 @@ class QIS:
         return services
 
     def get_client_devices(self, user_id):
-        response = req.get(f"{self.catalog}/device?user_id={user_id}")
+        response = req.get(f"{self.catalog}/device?client_id={user_id}")
         if response.status_code != 200:
             raise Exception(
                 f"Failed to get devices for user {user_id}: {response.text}"
